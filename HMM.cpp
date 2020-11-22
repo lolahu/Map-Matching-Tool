@@ -1,9 +1,9 @@
 #include "HMM.h"
 
-vector<Gpair> candidates(Graph* graph, Grid* grid, Point* traj_nd, int n){
+vector<Gpair> candidates(Graph* graph, Grid* grid, Point* traj_nd, int n, double radius){
     grid -> curr_range = 0;
     priority_queue<Gpair, vector<Gpair>, Comp_dist_to_t> dist_PQ  = GridSearch(graph, grid, traj_nd);
-    vector<Gpair> next_n = next_n_nodes(graph, grid, traj_nd, dist_PQ, n); //in ascending order by the distance to trajectory node;
+    vector<Gpair> next_n = next_n_nodes(graph, grid, traj_nd, dist_PQ, n, radius); //in ascending order by the distance to trajectory node;
     return next_n;
 }
 
@@ -70,13 +70,13 @@ bool compare_pair_dist(pair<int, double> pair1, pair<int, double> pair2) {
 }
 
 
-vector<pair<int, double>>  emission_set(Graph* graph, Grid* grid, Point* traj_nd, int n, double sigma){ //with candidate node ids
+vector<pair<int, double>>  emission_set(Graph* graph, Grid* grid, Point* traj_nd, int n, double sigma, double radius){ //with candidate node ids
     grid -> curr_range = 0;
-    vector<Gpair> next_n = candidates(graph, grid, traj_nd, n); // in ascending order by the distance to trajectory node;
+    vector<Gpair> next_n = candidates(graph, grid, traj_nd, n, radius); // in ascending order by the distance to trajectory node;
     // /* priority_queue<pair<int, double> , vector<pair<int, double>>, Comp_cdd_emi> emission_PQ; */
     vector<pair<int, double>> emissions;
     double sum_emi =0;
-    for (int i = 0; i < n; i++){
+    for (int i = 0; i < next_n.size(); i++){
         double dist = next_n[i].second;
         double emi_prob = emission(sigma, dist);
         pair<int, double> emi_pair; // sorted by the V's distance to T, in increasing order;
@@ -198,12 +198,10 @@ vector<pair<int, double>> tran_dijkstra(Graph* graph, int node_id, vector<Gpair>
 }
 
 State state_prob(Graph* graph, Grid* grid, Point* T1, Point* T2, double beta, double sigma, 
-int n, State prev_state, vector<pair<int, double>> emi_probs){ 
+int n, State prev_state, vector<pair<int, double>> emi_probs, double radius){ 
     // emission vector sorted by the V's distance to T, in increasing order;
-    vector<Gpair> curr_candidates = candidates(graph, grid, T2, n); // don't forget trans matric normalization
-    vector<Gpair> prev_candidates = candidates(graph, grid, T1, n);
-
-    // vector<pair<int, double>> emi_set = emission_set(graph, grid, T2, n, sigma); this is given in the parameters
+    vector<Gpair> curr_candidates = candidates(graph, grid, T2, n, radius); // don't forget trans matric normalization
+    vector<Gpair> prev_candidates = candidates(graph, grid, T1, n, radius);
 
     State curr_state;
     curr_state.cdd_nd_id.resize(n, 0.0);
@@ -266,19 +264,19 @@ State create_state0(vector<pair<int, double>>  emi_set){
 }
 
 
-vector<int> best_path(Graph* graph, Grid* grid, Trajectory* traj, int n, double sigma, double beta ){ 
+vector<int> best_path(Graph* graph, Grid* grid, Trajectory* traj, int n, double sigma, double beta, double radius){ 
     
-    vector<pair<int, double>> emi_0 = emission_set(graph, grid, traj->points[0], n, sigma);
+    vector<pair<int, double>> emi_0 = emission_set(graph, grid, traj->points[0], n, sigma, radius);
     State state0 = create_state0(emi_0);
     stack<State> state_stack; // want last in first out -- stack
     state_stack.push(state0);
 
     State prev_state = state0; 
 
-    for (int i =  0; i < 18; i++){ // change back to i < traj -> length - 1
+    for (int i =  0; i < traj -> length - 1; i++){ // change back to i < traj -> length - 1
         State prev_state = state_stack.top();
-        vector<pair<int, double>> curr_emi = emission_set(graph, grid, traj->points[i + 1], n, sigma);
-        State cur_state = state_prob(graph, grid, traj->points[i], traj->points[i + 1], beta, sigma, n, prev_state, curr_emi);
+        vector<pair<int, double>> curr_emi = emission_set(graph, grid, traj->points[i + 1], n, sigma, radius);
+        State cur_state = state_prob(graph, grid, traj->points[i], traj->points[i + 1], beta, sigma, n, prev_state, curr_emi, radius);
         state_stack.push(cur_state);
         prev_state = cur_state;
 
