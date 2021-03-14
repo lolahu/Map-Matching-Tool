@@ -35,7 +35,7 @@ void read_file(string file_name, Graph* graph) {
     ifstream file; 
     file.open(file_name);
     if(!file) {
-        cerr << "Unable to open file";
+        cerr << "Unable to open file\n";
         return;
     }
 
@@ -68,8 +68,8 @@ void read_file(string file_name, Graph* graph) {
         graph -> edges.push_back(e);
     }
 
-    //write a .dat file containing the graph's longitude and latitude coordinates
-    write_graph(graph, "graph_lat_lon.dat");   
+    /* write a .dat file containing the graph's longitude and latitude coordinates */
+    // write_graph(graph, "graph_lat_lon.dat");   
 
     file.close();
 
@@ -81,18 +81,6 @@ void read_file(string file_name, Graph* graph) {
     
     return;
 }
-
-// void convert_coordinates(Graph* graph, double x_scale, double y_scale){
-    // Euc_distance ed;
-    // overwrite the node's coordinates in mercator projection
-    // for(int i = 0; i < graph -> n_nodes; i++) {
-        // graph -> nodes[i].lat = ed.lat_mercator_proj(graph -> nodes[i].lat, graph -> min_lat);
-        // graph -> nodes[i].longitude = ed.lon_mercator_proj(graph -> nodes[i].longitude, graph -> min_long);
-    // }
-    // write_graph(graph, "graph_x_y.dat");
-// 
-    // return;
-    // }
 
 
 void read_processed_graph(string file_name, Graph* graph) {
@@ -107,10 +95,6 @@ void read_processed_graph(string file_name, Graph* graph) {
     }
 
     string buffer;
-    // /* skip the first five lines */
-    // for(int i = 0; i < IGNORE_LINES; i++) {
-        // getline(file, buffer);
-    // }
     /* read the total number of nodes and edges, store them in graph struct */
     file >> graph -> n_nodes >> graph -> n_edges >> graph -> lat_scale >> graph -> lon_scale>>
      graph -> original_min_lat >> graph -> original_max_lat >> graph -> original_min_long >> graph -> original_max_long;
@@ -123,6 +107,10 @@ void read_processed_graph(string file_name, Graph* graph) {
         istringstream vals(buffer);
         struct node n;
         vals >> n.id >> n.osmid >> n.lat >> n.longitude;
+        n.dist = INFINITY;
+        n.target = false;
+        n.settled = false;
+        n.parent_id = -1;
         graph -> nodes.push_back(n);
         check_boundaries(graph -> nodes[i].lat, graph -> nodes[i].longitude, graph);
     }
@@ -166,7 +154,7 @@ bool compare_inedge(struct edge edge1, struct edge edge2) { //int , check
 void outedge_offset_array(Graph* graph) {
     vector<struct edge> out_edges = graph -> edges;
     sort(out_edges.begin(), out_edges.end(), compare_outedge);
-    vector<int> offset{0};
+    vector<int> offset;
     int index = 0;
     int k;
     int i;
@@ -186,17 +174,21 @@ void outedge_offset_array(Graph* graph) {
     for(int j = 0; j < to_add; j++) {
         offset.push_back(i);
     }
-    
+    cout<< "offset.size(): "<<offset.size()<<endl;
+
     graph -> out_offsets = offset;
     for(int i = 0; i < out_edges.size(); i++) {
         graph -> out_off_edges.push_back(out_edges[i].id);
     }
+
+    cout<< "graph -> out_off_edges.size(): "<<graph -> out_off_edges.size()<<endl;
+    return;
 }
 
 void inedge_offset_array(Graph* graph) {
     vector<struct edge> in_edges = graph -> edges;
     sort(in_edges.begin(), in_edges.end(), compare_inedge);
-    vector<int> offset{0};
+    vector<int> offset;
     int index = 0;
     int k;
     int i;
@@ -224,6 +216,7 @@ void inedge_offset_array(Graph* graph) {
     for(int i = 0; i < in_edges.size(); i++) {
         graph -> in_off_edges.push_back(in_edges[i].id);
     }
+    return;
 }
 
 int get_outdeg(Graph* graph, int node_id) {
@@ -286,7 +279,10 @@ vector<int> trans_get_incident(Graph* graph, int node_id) {
 }
 
 vector<bool> DFS_fwd(Graph* graph) {
-    vector<bool> visited_fwd(graph -> n_nodes, false);
+    vector<bool> visited_fwd; //(graph -> n_nodes, false);
+    for (int i = 0; i < graph -> n_nodes; i++){
+        visited_fwd.push_back(false);
+    }
     stack<int> Stack;
     //start node is the first node in the graph
     int node_id = 0;
@@ -297,6 +293,7 @@ vector<bool> DFS_fwd(Graph* graph) {
 
         if(!visited_fwd[node_id]) {
             visited_fwd[node_id] = true;
+            // cout<<"visited_fwd[node_id] -- if changed to true: "<<visited_fwd[node_id]<<endl;
         }
 
         vector<int> incidents = get_incident(graph, node_id);
@@ -310,7 +307,10 @@ vector<bool> DFS_fwd(Graph* graph) {
 }
 
 vector<bool> DFS_bwd(Graph* graph) {
-    vector<bool> visited_bwd(graph -> n_nodes, false);
+    vector<bool> visited_bwd; //(graph -> n_nodes, false); // bug??
+    for (int i = 0; i < graph -> n_nodes; i++){
+        visited_bwd.push_back(false);
+    }
     stack<int> Stack;
     int node_id = 0;
     Stack.push(node_id);
@@ -319,8 +319,10 @@ vector<bool> DFS_bwd(Graph* graph) {
         Stack.pop();
         if(!visited_bwd[node_id]) {
             visited_bwd[node_id] = true;
+            cout<<"visited_bwd[node_id] -- if changed to true: "<<visited_bwd[node_id]<<endl;
         }
         vector<int> incidents = trans_get_incident(graph, node_id);
+        cout<<"incidents.size(): "<<incidents.size()<<endl;
         for(int i = incidents.size() - 1; i >= 0; i--) {
             if(!visited_bwd[incidents[i]]){
                 Stack.push(incidents[i]);
@@ -365,11 +367,17 @@ int binary_search_node(int node_id, Graph* graph) {
 void scc_graph(Graph* graph, Graph* SCC_graph) {
     vector<bool> visited_fwd = DFS_fwd(graph);
     vector<bool> visited_bwd = DFS_bwd(graph);
+    cout<<"scc_graph original graph # edges and nodes: "<<graph -> edges.size()<<" #nodes "<<graph -> nodes.size()<<endl;
+
+
 
     //check for any nodes that have both their flags checked
     for(int i = 0; i < graph -> n_nodes; i++) {
+        // cout<<"visited_fwd[i]: "<<visited_fwd[i]<<endl;
+        // cout<<"visited_bwd[i]: "<<visited_bwd[i]<<endl;
         if(visited_fwd[i] && visited_bwd[i]) {
             SCC_graph -> nodes.push_back(graph -> nodes[i]);
+            cout<<"SCC pushed\n";
             SCC_graph -> n_nodes += 1;
         }
     }
@@ -387,7 +395,6 @@ void scc_graph(Graph* graph, Graph* SCC_graph) {
         }
     }
 
-    //parallelize this?
     for(int i = 0; i < SCC_graph -> n_edges; i++) {
         int source = SCC_graph -> edges[i].srcid;
         int target = SCC_graph -> edges[i].trgtid;
@@ -399,7 +406,6 @@ void scc_graph(Graph* graph, Graph* SCC_graph) {
     for(int i = 0; i < SCC_graph -> n_nodes; i++) {
         SCC_graph -> nodes[i].id = i;
     }
-    write_graph(SCC_graph, "SCC_graph.dat");
 
     //compute the inedge and outedge offsets for the graph
     inedge_offset_array(SCC_graph);
